@@ -14,20 +14,22 @@
       <div class="logo">🃏</div>
       <h1>Дурак Онлайн</h1>
       <p class="subtitle">Играй с друзьями в Telegram!</p>
-      
+
       <div class="input-group">
         <label for="room-code">Код группы</label>
         <input type="text" id="room-code" placeholder="Введите код (например: ABC123)" maxlength="8">
       </div>
-      
+
       <button id="join-btn" class="btn btn-primary">Присоединиться</button>
-      
+
       <div class="divider">или</div>
-      
+
       <button id="create-btn" class="btn btn-secondary">Создать группу</button>
-      
+
+      <button id="rooms-btn" class="btn btn-rooms">📋 Список групп</button>
+
       <div id="error-msg" class="error-message"></div>
-      
+
       <div class="create-form hidden" id="create-form">
         <div class="input-group">
           <label for="room-name">Название группы</label>
@@ -38,56 +40,52 @@
       </div>
     </div>
   </div>
-  
-  <script src="js/telegram.js"></script>
+
   <script>
+    const SERVER_URL = "https://durak-game-it0a.onrender.com";
+
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
-    
-    const socket = io('https://durak-game-it0a.onrender.com'); // ЗАМЕНИТЕ НА ВАШ URL
-    
+
+    const socket = io(SERVER_URL);
+
     const roomCodeInput = document.getElementById('room-code');
     const joinBtn = document.getElementById('join-btn');
     const createBtn = document.getElementById('create-btn');
+    const roomsBtn = document.getElementById('rooms-btn');
     const createForm = document.getElementById('create-form');
     const confirmCreateBtn = document.getElementById('confirm-create');
     const roomNameInput = document.getElementById('room-name');
     const createdCodeDiv = document.getElementById('created-code');
     const errorMsg = document.getElementById('error-msg');
-    
-    // Получаем данные пользователя из Telegram
+
     const userData = tg.initDataUnsafe?.user || {};
-    
+
     joinBtn.addEventListener('click', () => {
       const code = roomCodeInput.value.trim().toUpperCase();
-      if (!code) {
-        showError('Введите код группы');
-        return;
-      }
-      
-      socket.emit('join-room', {
-        roomId: code,
-        userData: userData
-      }, (response) => {
+      if (!code) { showError('Введите код группы'); return; }
+      socket.emit('join-room', { roomId: code, userData: userData }, (response) => {
         if (response.success) {
           localStorage.setItem('durak_roomId', code);
           localStorage.setItem('durak_playerIndex', response.playerIndex);
           window.location.href = 'lobby.html';
-        } else {
-          showError(response.error || 'Ошибка входа');
-        }
+        } else { showError(response.error || 'Ошибка входа'); }
       });
     });
-    
+
     createBtn.addEventListener('click', () => {
       createForm.classList.remove('hidden');
       createBtn.classList.add('hidden');
+      roomsBtn.classList.add('hidden');
     });
-    
+
+    roomsBtn.addEventListener('click', () => {
+      window.location.href = 'rooms.html';
+    });
+
     confirmCreateBtn.addEventListener('click', () => {
       const name = roomNameInput.value.trim() || 'Новая игра';
-      
       socket.emit('create-room', { roomName: name }, (response) => {
         if (response.success) {
           createdCodeDiv.innerHTML = `
@@ -96,43 +94,32 @@
               <span class="code-value" id="new-code">${response.roomId}</span>
               <button class="copy-btn" onclick="copyCode()">📋</button>
             </div>
-            <p class="hint">Скопируйте и отправьте друзьям!</p>
-          `;
+            <p class="hint">Скопируйте и отправьте друзьям!</p>`;
           createdCodeDiv.classList.remove('hidden');
-          
-          // Автоматически присоединяем создателя
-          socket.emit('join-room', {
-            roomId: response.roomId,
-            userData: userData
-          }, (joinResponse) => {
+          socket.emit('join-room', { roomId: response.roomId, userData: userData }, (joinResponse) => {
             if (joinResponse.success) {
               localStorage.setItem('durak_roomId', response.roomId);
               localStorage.setItem('durak_playerIndex', joinResponse.playerIndex);
-              setTimeout(() => {
-                window.location.href = 'lobby.html';
-              }, 2000);
+              setTimeout(() => window.location.href = 'lobby.html', 2000);
             }
           });
         }
       });
     });
-    
+
     function copyCode() {
       const code = document.getElementById('new-code').textContent;
       navigator.clipboard.writeText(code);
-      tg.showPopup({ title: 'Скопировано!', message: `Код ${code} скопирован в буфер обмена` });
+      tg.showPopup({ title: 'Скопировано!', message: `Код ${code} скопирован` });
     }
-    
+
     function showError(msg) {
       errorMsg.textContent = msg;
       errorMsg.style.display = 'block';
       setTimeout(() => errorMsg.style.display = 'none', 3000);
     }
-    
-    // Обработка Enter
-    roomCodeInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') joinBtn.click();
-    });
+
+    roomCodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') joinBtn.click(); });
   </script>
 </body>
 </html>
