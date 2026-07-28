@@ -412,20 +412,23 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('disconnect', () => {
-    if (currentRoom) {
-      currentRoom.removePlayer(socket.id);
-      io.to(currentRoom.id).emit('player-left', {
-        players: currentRoom.players.map(p => ({
-          firstName: p.firstName,
-          photoUrl: p.photoUrl,
-          isReady: p.isReady,
-          isActive: p.isActive
-        }))
-      });
-      if (currentRoom.players.length === 0) rooms.delete(currentRoom.id);
-    }
-  });
+ socket.on('disconnect', () => {
+  if (currentRoom) {
+    currentRoom.removePlayer(socket.id);
+    io.to(currentRoom.id).emit('player-left', {
+      players: currentRoom.players.map(p => ({
+        firstName: p.firstName,
+        photoUrl: p.photoUrl,
+        isReady: p.isReady,
+        isActive: p.isActive
+      }))
+    });
+    setTimeout(() => {
+      if (currentRoom && currentRoom.players.length === 0) {
+        rooms.delete(currentRoom.id);
+      }
+    }, 15000);
+  }
 });
 
 // ===== API: СПИСОК АКТИВНЫХ КОМНАТ =====
