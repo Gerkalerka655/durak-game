@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Дурак — Список групп</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <div class="rooms-screen">
+      <div class="rooms-header">
+        <h2>🎮 Активные группы</h2>
+        <p class="subtitle">Выбери группу и присоединись!</p>
+      </div>
+
+      <div class="rooms-list" id="rooms-list">
+        <div class="loading">Загрузка групп...</div>
+      </div>
+
+      <div class="rooms-actions">
+        <button class="btn btn-secondary" onclick="location.href='index.html'">🔙 Назад</button>
+        <button class="btn btn-primary" onclick="refreshRooms()">🔄 Обновить</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SERVER_URL = "https://durak-game-it0a.onrender.com";
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    const socket = io(SERVER_URL);
+    const roomsList = document.getElementById('rooms-list');
+
+    async function loadRooms() {
+      roomsList.innerHTML = '<div class="loading">Загрузка групп...</div>';
+      try {
+        const response = await fetch(`${SERVER_URL}/api/rooms`);
+        const rooms = await response.json();
+        renderRooms(rooms);
+      } catch (e) {
+        roomsList.innerHTML = '<div class="error">Не удалось загрузить группы</div>';
+      }
+    }
+
+    function renderRooms(rooms) {
+      if (rooms.length === 0) {
+        roomsList.innerHTML = '<div class="empty">Нет активных групп. Создай свою!</div>';
+        return;
+      }
+
+      roomsList.innerHTML = '';
+      rooms.forEach(room => {
+        const roomCard = document.createElement('div');
+        roomCard.className = 'room-card';
+        const slotsLeft = room.maxPlayers - room.players;
+        const isFull = room.players >= room.maxPlayers;
+
+        roomCard.innerHTML = `
+          <div class="room-info">
+            <div class="room-name">${room.name}</div>
+            <div class="room-code">Код: ${room.id}</div>
+            <div class="room-players">
+              ${room.playerNames.map(n => `<span class="player-tag">${n}</span>`).join('')}
+            </div>
+          </div>
+          <div class="room-meta">
+            <div class="room-count ${isFull ? 'full' : ''}">${room.players}/${room.maxPlayers}</div>
+            <button class="btn btn-join ${isFull ? 'disabled' : ''}" 
+                    ${isFull ? 'disabled' : ''} 
+                    onclick="joinRoom('${room.id}')">
+              ${isFull ? 'Полна' : 'Войти'}
+            </button>
+          </div>
+        `;
+        roomsList.appendChild(roomCard);
+      });
+    }
+
+    function joinRoom(roomId) {
+      const userData = tg.initDataUnsafe?.user || {};
+      socket.emit('join-room', { roomId: roomId, userData: userData }, (response) => {
+        if (response.success) {
+          localStorage.setItem('durak_roomId', roomId);
+          localStorage.setItem('durak_playerIndex', response.playerIndex);
+          window.location.href = 'lobby.html';
+        } else {
+          tg.showPopup({ title: 'Ошибка', message: response.error || 'Не удалось войти' });
+        }
+      });
+    }
+
+    function refreshRooms() {
+      loadRooms();
+    }
+
+    // Автообновление каждые 5 секунд
+    setInterval(loadRooms, 5000);
+
+    // Первоначальная загрузка
+    loadRooms();
+  </script>
+</body>
+</html>
