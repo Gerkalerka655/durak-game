@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Дурак — Лобби</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <div class="lobby-screen">
+      <div class="lobby-header">
+        <h2>🎮 Лобби</h2>
+        <div class="room-info">
+          <span class="room-code" id="room-code-display"></span>
+          <button class="copy-btn-small" onclick="copyRoomCode()">📋</button>
+        </div>
+      </div>
+      
+      <div class="players-list" id="players-list">
+        <!-- Игроки будут здесь -->
+      </div>
+      
+      <div class="lobby-actions">
+        <button id="ready-btn" class="btn btn-ready">✅ Я готов</button>
+        <button id="start-btn" class="btn btn-start hidden">🚀 Начать игру</button>
+      </div>
+      
+      <div class="lobby-hint" id="lobby-hint">
+        Ожидаем игроков... (минимум 2)
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+    
+    const socket = io('https://your-server-url.com'); // ЗАМЕНИТЕ НА ВАШ URL
+    const roomId = localStorage.getItem('durak_roomId');
+    const myPlayerIndex = parseInt(localStorage.getItem('durak_playerIndex')) || 0;
+    
+    if (!roomId) {
+      window.location.href = 'index.html';
+    }
+    
+    document.getElementById('room-code-display').textContent = roomId;
+    
+    const playersList = document.getElementById('players-list');
+    const readyBtn = document.getElementById('ready-btn');
+    const startBtn = document.getElementById('start-btn');
+    const lobbyHint = document.getElementById('lobby-hint');
+    
+    let players = [];
+    let imReady = false;
+    
+    socket.emit('join-room', {
+      roomId: roomId,
+      userData: tg.initDataUnsafe?.user || {}
+    }, (response) => {
+      if (!response.success) {
+        showError(response.error);
+        setTimeout(() => window.location.href = 'index.html', 2000);
+      }
+    });
+    
+    socket.on('player-joined', (data) => {
+      players = data.players;
+      renderPlayers();
+    });
+    
+    socket.on('player-ready-update', (data) => {
+      players = data.players;
+      renderPlayers();
+      
+      if (data.allReady && data.enoughPlayers) {
+        lobbyHint.textContent = 'Все готовы! Создатель может начать игру.';
+        if (myPlayerIndex === 0) {
+          startBtn.classList.remove('hidden');
+        }
+      } else {
+        lobbyHint.textContent = `Ожидаем готовности... (${players.filter(p => p.isReady).length}/${players.length} готовы)`;
+        startBtn.classList.add('hidden');
+      }
+    });
+    
+    socket.on('player-left', (data) => {
+      players = data.players;
+      renderPlayers();
+    });
+    
+    socket.on('game-started', (state) => {
+      localStorage.setItem('durak_gameState', JSON.stringify(state));
+      window.location.href = 'game.html';
+    });
+    
+    readyBtn.addEventListener('click', () => {
+      if (!imReady) {
+        imReady = true;
+        readyBtn.textContent = '⏳ Ожидаем...';
+        readyBtn.disabled = true;
+        socket.emit('player-ready');
+      }
+    });
+    
+    startBtn.addEventListener('click', () => {
+      socket.emit('start-game');
+    });
+    
+    function renderPlayers() {
+      playersList.innerHTML = '';
+      players.forEach((player, index) => {
+        const playerCard = document.createElement('div');
+        playerCard.className = `player-card ${player.isReady ? 'ready' : ''} ${index === 0 ? 'creator' : ''}`;
+        
+        const avatar = player.photoUrl 
+          ? `<img src="${player.photoUrl}" alt="avatar" class="player-avatar">`
+          : `<div class="player-avatar-placeholder">${player.firstName[0]}</div>`;
+        
+        playerCard.innerHTML = `
+          ${avatar}
+          <div class="player-info">
+            <div class="player-name">${player.firstName} ${player.lastName || ''}</div>
+            <div class="player-status">${player.isReady ? '✅ Готов' : '⏳ Ожидает'}</div>
+          </div>
+          ${index === 0 ? '<span class="creator-badge">👑</span>' : ''}
+        `;
+        
+        playersList.appendChild(playerCard);
+      });
+    }
+    
+    function copyRoomCode() {
+      navigator.clipboard.writeText(roomId);
+      tg.showPopup({ title: 'Скопировано!', message: `Код ${roomId} скопирован` });
+    }
+    
+    function showError(msg) {
+      tg.showPopup({ title: 'Ошибка', message: msg });
+    }
+  </script>
+</body>
+</html>
