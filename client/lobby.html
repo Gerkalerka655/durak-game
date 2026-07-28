@@ -18,121 +18,145 @@
           <button class="copy-btn-small" onclick="copyRoomCode()">📋</button>
         </div>
       </div>
-      
-      <div class="players-list" id="players-list">
-        <!-- Игроки будут здесь -->
-      </div>
-      
+      <div class="players-list" id="players-list"></div>
       <div class="lobby-actions">
-        <button id="ready-btn" class="btn btn-ready">✅ Я готов</button>
+        <button id="ready-btn" class="btn btn-ready">✋ Я готов</button>
         <button id="start-btn" class="btn btn-start hidden">🚀 Начать игру</button>
       </div>
-      
-      <div class="lobby-hint" id="lobby-hint">
-        Ожидаем игроков... (минимум 2)
-      </div>
+      <div class="lobby-hint" id="lobby-hint">Подключаемся...</div>
     </div>
   </div>
+
   <script>
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
-    
-    const socket = io('https://durak-game-it0a.onrender.com');
+
+    const socket = io('https://durak-game-it0a.onrender.com', {
+      transports: ['websocket', 'polling'],
+      timeout: 10000
+    });
+
     const roomId = localStorage.getItem('durak_roomId');
-    let myPlayerIndex = parseInt(localStorage.getItem('durak_playerIndex')) || 0; // <-- let!
-    
+    let myPlayerIndex = parseInt(localStorage.getItem('durak_playerIndex')) || 0;
+
     if (!roomId) {
       window.location.href = 'index.html';
     }
-    
+
     document.getElementById('room-code-display').textContent = roomId;
-    
+
     const playersList = document.getElementById('players-list');
     const readyBtn = document.getElementById('ready-btn');
     const startBtn = document.getElementById('start-btn');
     const lobbyHint = document.getElementById('lobby-hint');
-    
+
     let players = [];
     let imReady = false;
-    let joined = false; // <-- флаг, что join-room завершился
-    
-    // Сначала join-room
+    let joined = false;
+
+    // Логи подключения
+    socket.on('connect', () => {
+      console.log('✅ Подключен, socket id:', socket.id);
+      lobbyHint.textContent = 'Входим в комнату...';
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('❌ Ошибка подключения:', err.message);
+      lobbyHint.textContent = 'Ошибка подключения: ' + err.message;
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('⚠️ Отключен:', reason);
+      joined = false;
+      lobbyHint.textContent = 'Соединение потеряно. Перезагрузите страницу.';
+    });
+
+    // Вход в комнату
+    console.log('→ Отправляю join-room:', roomId);
     socket.emit('join-room', {
       roomId: roomId,
       userData: tg.initDataUnsafe?.user || {}
     }, (response) => {
-      console.log('join-room response:', response);
-      if (!response.success) {
-        showError(response.error);
+      console.log('← Ответ join-room:', response);
+      if (!response || !response.success) {
+        const msg = (response && response.error) || 'Не удалось войти';
+        console.error('Ошибка входа:', msg);
+        tg.showPopup({ title: 'Ошибка', message: msg });
         setTimeout(() => window.location.href = 'index.html', 2000);
-      } else {
-        // СОХРАНЯЕМ актуальный playerIndex!
-        myPlayerIndex = response.playerIndex;
-        localStorage.setItem('durak_playerIndex', response.playerIndex);
-        joined = true;
+        return;
       }
+      myPlayerIndex = response.playerIndex;
+      localStorage.setItem('durak_playerIndex', response.playerIndex);
+      joined = true;
+      console.log('✅ Вошёл, мой индекс:', myPlayerIndex);
     });
-    
+
     socket.on('player-joined', (data) => {
-      console.log('player-joined:', data);
-      players = data.players;
+      console.log('← player-joined:', data);
+      players = data.players || [];
       renderPlayers();
     });
-    
+
     socket.on('player-ready-update', (data) => {
-      console.log('player-ready-update:', data); // <-- для отладки
-      players = data.players;
+      console.log('← player-ready-update:', data);
+      players = data.players || [];
       renderPlayers();
-      
+
       if (data.allReady && data.enoughPlayers) {
-        lobbyHint.textContent = 'Все готовы! Хозяин может начать игру.';
-        if (myPlayerIndex === 0) {
-          startBtn.classList.remove('hidden');
-        }
+        lobbyHint.textContent = 'Все готовы! Хозяин может начать.';
+        if (myPlayerIndex === 0) startBtn.classList.remove('hidden');
       } else {
         const readyCount = players.filter(p => p.isReady).length;
-        lobbyHint.textContent = `Ожидаем игроков... (${readyCount}/${players.length} готовы)`;
+        lobbyHint.textContent = `Ожидаем... (${readyCount}/${players.length} готовы)`;
         startBtn.classList.add('hidden');
       }
     });
-    
+
     socket.on('player-left', (data) => {
-      console.log('player-left:', data);
-      players = data.players;
+      console.log('← player-left:', data);
+      players = data.players || [];
       renderPlayers();
     });
-    
+
     socket.on('game-started', (state) => {
+      console.log('← game-started!');
       localStorage.setItem('durak_gameState', JSON.stringify(state));
       window.location.href = 'game.html';
     });
-    
+
     readyBtn.addEventListener('click', () => {
-      if (!imReady && joined) { // <-- проверяем, что join завершился
-        imReady = true;
-        readyBtn.textContent = '⏳ Ожидаем...';
-        readyBtn.disabled = true;
-        console.log('Отправляю player-ready');
-        socket.emit('player-ready');
+      console.log('→ Клик Готов, joined:', joined, 'imReady:', imReady);
+      if (!joined) {
+        tg.showPopup({ title: 'Подождите', message: 'Ещё подключаемся к серверу...' });
+        return;
       }
+      if (imReady) return;
+      
+      imReady = true;
+      readyBtn.textContent = '⏳ Ожидаем...';
+      readyBtn.disabled = true;
+      socket.emit('player-ready');
     });
-    
+
     startBtn.addEventListener('click', () => {
+      console.log('→ Отправляю start-game');
       socket.emit('start-game');
     });
-    
+
     function renderPlayers() {
       playersList.innerHTML = '';
+      if (!players || players.length === 0) {
+        playersList.innerHTML = '<div class="empty">Пока никого нет</div>';
+        return;
+      }
       players.forEach((player, index) => {
-        const playerCard = document.createElement('div');
-        playerCard.className = `player-card ${player.isReady ? 'ready' : ''} ${index === 0 ? 'creator' : ''}`;
-        
-        const avatar = player.photoUrl 
-          ? `<img src="${player.photoUrl}" alt="avatar" class="player-avatar">`
-          : `<div class="player-avatar-placeholder">${player.firstName ? player.firstName[0] : '?'}</div>`;
-        
-        playerCard.innerHTML = `
+        const card = document.createElement('div');
+        card.className = `player-card ${player.isReady ? 'ready' : ''} ${index === 0 ? 'creator' : ''}`;
+        const avatar = player.photoUrl
+          ? `<img src="${player.photoUrl}" class="player-avatar">`
+          : `<div class="player-avatar-placeholder">${(player.firstName?.[0]) || '?'}</div>`;
+        card.innerHTML = `
           ${avatar}
           <div class="player-info">
             <div class="player-name">${player.firstName || 'Игрок'} ${player.lastName || ''}</div>
@@ -140,18 +164,13 @@
           </div>
           ${index === 0 ? '<span class="creator-badge">👑</span>' : ''}
         `;
-        
-        playersList.appendChild(playerCard);
+        playersList.appendChild(card);
       });
     }
-    
+
     function copyRoomCode() {
       navigator.clipboard.writeText(roomId);
-      tg.showPopup({ title: 'Скопировано!', message: `Код ${roomId} скопирован в буфер` });
-    }
-    
-    function showError(msg) {
-      tg.showPopup({ title: 'Ошибка', message: msg });
+      tg.showPopup({ title: 'Скопировано!', message: `Код ${roomId} в буфере` });
     }
   </script>
 </body>
