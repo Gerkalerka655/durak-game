@@ -34,7 +34,6 @@ body {
   padding: 16px;
 }
 
-/* ===== ЭКРАН ВХОДА ===== */
 .login-screen {
   display: flex;
   flex-direction: column;
@@ -206,7 +205,6 @@ h1 {
   gap: 12px;
 }
 
-/* ===== ЛОББИ ===== */
 .lobby-screen {
   display: flex;
   flex-direction: column;
@@ -343,7 +341,6 @@ h1 {
   font-size: 14px;
 }
 
-/* ===== ИГРОВОЙ СТОЛ ===== */
 .game-screen {
   display: flex;
   flex-direction: column;
@@ -380,7 +377,6 @@ h1 {
   color: var(--accent);
 }
 
-/* Оппоненты */
 .opponents {
   display: flex;
   justify-content: center;
@@ -443,7 +439,6 @@ h1 {
   font-size: 16px;
 }
 
-/* Стол */
 .table-area {
   flex: 1;
   display: flex;
@@ -475,7 +470,6 @@ h1 {
   margin-left: 15px;
 }
 
-/* Карты */
 .card {
   width: 70px;
   height: 100px;
@@ -549,7 +543,6 @@ h1 {
   color: var(--accent);
 }
 
-/* Мои карты */
 .my-hand {
   display: flex;
   justify-content: center;
@@ -569,7 +562,6 @@ h1 {
   margin-right: 0;
 }
 
-/* Кнопки игры */
 .game-actions {
   display: flex;
   gap: 12px;
@@ -588,7 +580,6 @@ h1 {
   flex: 1;
 }
 
-/* Результат */
 .game-result {
   position: fixed;
   top: 0;
@@ -621,18 +612,143 @@ h1 {
   margin-bottom: 24px;
 }
 
-/* Адаптив */
 @media (max-width: 380px) {
   .card {
     width: 60px;
     height: 86px;
   }
-  
   .card-center {
     font-size: 22px;
   }
-  
   .my-hand .card {
     margin-right: -25px;
   }
+}
+/* ===== ROOMS SCREEN ===== */
+.rooms-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 20px;
+  min-height: 100vh;
+}
+
+.rooms-header {
+  text-align: center;
+}
+
+.rooms-header h2 {
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+.rooms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+
+.room-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 16px;
+  border: 2px solid rgba(255,255,255,0.1);
+  transition: all 0.2s;
+}
+
+.room-card:hover {
+  border-color: var(--accent);
+  background: rgba(255,255,255,0.08);
+}
+
+.room-info {
+  flex: 1;
+}
+
+.room-name {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.room-code {
+  font-size: 14px;
+  color: var(--accent);
+  font-family: monospace;
+  margin-bottom: 8px;
+}
+
+.room-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.player-tag {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 20px;
+  color: var(--tg-hint);
+}
+
+.room-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 80px;
+}
+
+.room-count {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.room-count.full {
+  color: var(--danger);
+}
+
+.btn-join {
+  padding: 8px 16px;
+  font-size: 14px;
+  min-width: 70px;
+}
+
+.btn-join.disabled {
+  background: rgba(255,255,255,0.1);
+  color: var(--tg-hint);
+  cursor: not-allowed;
+}
+
+.btn-rooms {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  margin-top: 8px;
+}
+
+.loading, .empty, .error {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--tg-hint);
+  font-size: 16px;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.rooms-actions {
+  display: flex;
+  gap: 12px;
+  padding-bottom: 20px;
+}
+
+.rooms-actions .btn {
+  flex: 1;
 }
