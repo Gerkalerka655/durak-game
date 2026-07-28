@@ -40,14 +40,27 @@
       roomsList.innerHTML = '<div class="loading">Загрузка групп...</div>';
       try {
         const response = await fetch(`${SERVER_URL}/api/rooms`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
         const rooms = await response.json();
+        console.log('Получены комнаты:', rooms); // <-- для отладки
         renderRooms(rooms);
       } catch (e) {
-        roomsList.innerHTML = '<div class="error">Не удалось загрузить группы</div>';
+        console.error('Ошибка загрузки комнат:', e); // <-- смотри в консоль!
+        roomsList.innerHTML = `<div class="error">Не удалось загрузить группы<br><small>${e.message}</small></div>`;
       }
     }
 
     function renderRooms(rooms) {
+      // Защита: если пришёл не массив
+      if (!Array.isArray(rooms)) {
+        roomsList.innerHTML = '<div class="error">Некорректный ответ сервера</div>';
+        return;
+      }
+
       if (rooms.length === 0) {
         roomsList.innerHTML = '<div class="empty">Нет активных групп. Создай свою!</div>';
         return;
@@ -57,22 +70,26 @@
       rooms.forEach(room => {
         const roomCard = document.createElement('div');
         roomCard.className = 'room-card';
-        const slotsLeft = room.maxPlayers - room.players;
-        const isFull = room.players >= room.maxPlayers;
+        
+        // Защита от undefined полей
+        const players = room.players || 0;
+        const maxPlayers = room.maxPlayers || 2;
+        const playerNames = room.playerNames || [];
+        const isFull = players >= maxPlayers;
 
         roomCard.innerHTML = `
           <div class="room-info">
-            <div class="room-name">${room.name}</div>
-            <div class="room-code">Код: ${room.id}</div>
+            <div class="room-name">${room.name || 'Без названия'}</div>
+            <div class="room-code">Код: ${room.id || room.code || '—'}</div>
             <div class="room-players">
-              ${room.playerNames.map(n => `<span class="player-tag">${n}</span>`).join('')}
+              ${playerNames.map(n => `<span class="player-tag">${n}</span>`).join('') || '<span class="player-tag empty">Нет игроков</span>'}
             </div>
           </div>
           <div class="room-meta">
-            <div class="room-count ${isFull ? 'full' : ''}">${room.players}/${room.maxPlayers}</div>
+            <div class="room-count ${isFull ? 'full' : ''}">${players}/${maxPlayers}</div>
             <button class="btn btn-join ${isFull ? 'disabled' : ''}" 
                     ${isFull ? 'disabled' : ''} 
-                    onclick="joinRoom('${room.id}')">
+                    onclick="joinRoom('${room.id || room.code}')">
               ${isFull ? 'Полна' : 'Войти'}
             </button>
           </div>
@@ -84,12 +101,12 @@
     function joinRoom(roomId) {
       const userData = tg.initDataUnsafe?.user || {};
       socket.emit('join-room', { roomId: roomId, userData: userData }, (response) => {
-        if (response.success) {
+        if (response && response.success) {
           localStorage.setItem('durak_roomId', roomId);
           localStorage.setItem('durak_playerIndex', response.playerIndex);
           window.location.href = 'lobby.html';
         } else {
-          tg.showPopup({ title: 'Ошибка', message: response.error || 'Не удалось войти' });
+          tg.showPopup({ title: 'Ошибка', message: (response && response.error) || 'Не удалось войти' });
         }
       });
     }
@@ -101,7 +118,7 @@
     // Автообновление каждые 5 секунд
     setInterval(loadRooms, 5000);
 
-    // Первоначальная загрузка
+    // Первая загрузка
     loadRooms();
   </script>
 </body>
