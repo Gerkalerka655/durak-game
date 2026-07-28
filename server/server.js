@@ -10,31 +10,22 @@ app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
 // ===== КЛАСС КАРТЫ =====
 class Card {
   constructor(suit, rank) {
-    this.suit = suit;   // ♠ ♥ ♦ ♣
-    this.rank = rank;   // 6,7,8,9,10,J,Q,K,A
+    this.suit = suit;
+    this.rank = rank;
     this.id = `${suit}-${rank}`;
   }
-  
   get value() {
     const values = { '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14 };
     return values[this.rank];
   }
-  
-  toString() {
-    return `${this.suit}${this.rank}`;
-  }
 }
 
-// ===== КОЛОДА =====
 function createDeck() {
   const suits = ['♠', '♥', '♦', '♣'];
   const ranks = ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
@@ -56,19 +47,19 @@ function shuffleDeck(deck) {
 }
 
 // ===== КОМНАТЫ =====
-const rooms = new Map(); // roomId -> room data
+const rooms = new Map();
 
 class Room {
   constructor(id, name) {
     this.id = id;
     this.name = name;
-    this.players = [];        // { socketId, userId, username, firstName, lastName, photoUrl, cards: [], isReady: false }
+    this.players = [];
     this.maxPlayers = 3;
-    this.status = 'waiting';  // waiting, playing, finished
+    this.status = 'waiting';
     this.deck = [];
     this.trumpCard = null;
     this.trumpSuit = null;
-    this.table = [];          // [{attacker, defender, card, beatenBy}]
+    this.table = [];
     this.attackerIndex = 0;
     this.defenderIndex = 1;
     this.currentPlayerIndex = 0;
@@ -81,10 +72,9 @@ class Room {
   addPlayer(socketId, userData) {
     if (this.players.length >= this.maxPlayers) return false;
     if (this.status !== 'waiting') return false;
-    
     const player = {
       socketId,
-      userId: userData.id,
+      userId: userData.id || uuidv4(),
       username: userData.username || '',
       firstName: userData.first_name || 'Игрок',
       lastName: userData.last_name || '',
@@ -93,7 +83,6 @@ class Room {
       isReady: false,
       isActive: true
     };
-    
     this.players.push(player);
     return true;
   }
@@ -101,7 +90,6 @@ class Room {
   removePlayer(socketId) {
     const idx = this.players.findIndex(p => p.socketId === socketId);
     if (idx !== -1) {
-      // Вернуть карты игрока в колоду если игра идёт
       if (this.status === 'playing') {
         this.deck.push(...this.players[idx].cards);
         this.players[idx].isActive = false;
@@ -113,29 +101,21 @@ class Room {
 
   startGame() {
     if (this.players.length < 2) return false;
-    
     this.status = 'playing';
     this.deck = shuffleDeck(createDeck());
     this.table = [];
     this.discardPile = [];
-    
-    // Определяем козырь (последняя карта)
     this.trumpCard = this.deck[this.deck.length - 1];
     this.trumpSuit = this.trumpCard.suit;
-    
-    // Раздаём по 6 карт каждому
+
     for (let i = 0; i < 6; i++) {
       for (const player of this.players) {
-        if (this.deck.length > 0) {
-          player.cards.push(this.deck.pop());
-        }
+        if (this.deck.length > 0) player.cards.push(this.deck.pop());
       }
     }
-    
-    // Определяем первого атакующего (меньшая козырная карта)
+
     let minTrump = null;
     let attackerIdx = 0;
-    
     for (let i = 0; i < this.players.length; i++) {
       const trumpCards = this.players[i].cards.filter(c => c.suit === this.trumpSuit);
       if (trumpCards.length > 0) {
@@ -146,12 +126,11 @@ class Room {
         }
       }
     }
-    
+
     this.attackerIndex = attackerIdx;
     this.defenderIndex = (attackerIdx + 1) % this.players.length;
     this.currentPlayerIndex = this.attackerIndex;
     this.turnCount = 0;
-    
     return true;
   }
 
@@ -185,7 +164,6 @@ class Room {
     };
   }
 
-  // Проверка, может ли карта побить другую
   canBeat(attackingCard, defendingCard) {
     if (defendingCard.suit === attackingCard.suit) {
       return defendingCard.value > attackingCard.value;
@@ -196,7 +174,6 @@ class Room {
     return false;
   }
 
-  // Получить ранги карт на столе (для подкидывания)
   getTableRanks() {
     const ranks = new Set();
     for (const pair of this.table) {
@@ -206,16 +183,12 @@ class Room {
     return ranks;
   }
 
-  // Можно ли подкинуть карту
   canThrow(card, playerIndex) {
     if (playerIndex === this.defenderIndex) return false;
-    if (this.table.length === 0) return true; // Первый ход
-    
-    const tableRanks = this.getTableRanks();
-    return tableRanks.has(card.rank);
+    if (this.table.length === 0) return true;
+    return this.getTableRanks().has(card.rank);
   }
 
-  // Максимальное количество карт на столе
   getMaxCardsOnTable() {
     const defender = this.players[this.defenderIndex];
     return defender ? Math.min(6, defender.cards.length + this.table.length) : 6;
@@ -225,61 +198,41 @@ class Room {
     const player = this.players[playerIndex];
     const cardIdx = player.cards.findIndex(c => c.id === cardId);
     if (cardIdx === -1) return { success: false, error: 'Карта не найдена' };
-    
     const card = player.cards[cardIdx];
-    
-    // Атака
-    if (playerIndex === this.attackerIndex || 
+
+    if (playerIndex === this.attackerIndex ||
         (playerIndex !== this.defenderIndex && this.canThrow(card, playerIndex))) {
-      
       if (this.table.length >= this.getMaxCardsOnTable()) {
         return { success: false, error: 'Нельзя подкинуть больше карт' };
       }
-      
       player.cards.splice(cardIdx, 1);
-      this.table.push({
-        attacker: playerIndex,
-        card: card,
-        beatenBy: null
-      });
-      
-      // Если защищающийся не может отбиться и у него нет карт — автоматически берёт
+      this.table.push({ attacker: playerIndex, card: card, beatenBy: null });
       this.checkAutoTake();
-      
       return { success: true, action: 'attack' };
     }
-    
-    // Защита
+
     if (playerIndex === this.defenderIndex && this.table.length > 0) {
       const lastPair = this.table[this.table.length - 1];
       if (lastPair.beatenBy !== null) {
         return { success: false, error: 'Эта карта уже отбита' };
       }
-      
       if (!this.canBeat(lastPair.card, card)) {
         return { success: false, error: 'Нельзя отбить этой картой' };
       }
-      
       player.cards.splice(cardIdx, 1);
       lastPair.beatenBy = card;
-      
-      // Проверяем, отбиты ли все карты
       const allBeaten = this.table.every(p => p.beatenBy !== null);
       if (allBeaten && this.table.length >= this.getMaxCardsOnTable()) {
-        // Авто-завершение хода
         setTimeout(() => this.endTurn(true), 500);
       }
-      
       return { success: true, action: 'defend' };
     }
-    
     return { success: false, error: 'Неверный ход' };
   }
 
   checkAutoTake() {
     const defender = this.players[this.defenderIndex];
     if (!defender || defender.cards.length === 0) {
-      // Защищающийся не может отбиться — берёт карты
       this.endTurn(false);
     }
   }
@@ -288,65 +241,47 @@ class Room {
     if (playerIndex !== this.defenderIndex) {
       return { success: false, error: 'Только защищающийся может взять карты' };
     }
-    
     this.endTurn(false);
     return { success: true };
   }
 
   endTurn(successfulDefense) {
     if (successfulDefense) {
-      // Карты в отбой
       for (const pair of this.table) {
         this.discardPile.push(pair.card);
         if (pair.beatenBy) this.discardPile.push(pair.beatenBy);
       }
       this.table = [];
-      
-      // Добираем карты
       this.drawCards();
-      
-      // Следующий ход: защищающийся атакует
       this.attackerIndex = this.defenderIndex;
       this.defenderIndex = (this.defenderIndex + 1) % this.players.length;
-      
-      // Пропускаем неактивных игроков
       while (!this.players[this.defenderIndex]?.isActive) {
         this.defenderIndex = (this.defenderIndex + 1) % this.players.length;
       }
     } else {
-      // Защищающийся берёт все карты со стола
       const defender = this.players[this.defenderIndex];
       for (const pair of this.table) {
         defender.cards.push(pair.card);
         if (pair.beatenBy) defender.cards.push(pair.beatenBy);
       }
       this.table = [];
-      
-      // Добираем карты (атакующий первый)
       this.drawCards();
-      
-      // Следующий ход: тот же атакующий, следующий защищающийся
       this.defenderIndex = (this.defenderIndex + 1) % this.players.length;
       while (!this.players[this.defenderIndex]?.isActive) {
         this.defenderIndex = (this.defenderIndex + 1) % this.players.length;
       }
     }
-    
     this.currentPlayerIndex = this.attackerIndex;
     this.turnCount++;
-    
-    // Проверка конца игры
     this.checkGameEnd();
   }
 
   drawCards() {
-    // Порядок добора: атакующий, потом остальные по часовой
     const order = [];
     for (let i = 0; i < this.players.length; i++) {
       const idx = (this.attackerIndex + i) % this.players.length;
       if (this.players[idx].isActive) order.push(idx);
     }
-    
     for (const idx of order) {
       while (this.players[idx].cards.length < 6 && this.deck.length > 0) {
         this.players[idx].cards.push(this.deck.pop());
@@ -355,23 +290,16 @@ class Room {
   }
 
   checkGameEnd() {
-    const activePlayers = this.players.filter(p => p.isActive && p.cards.length > 0);
-    
     if (this.deck.length === 0) {
-      // Игроки без карт выходят
       for (const player of this.players) {
         if (player.isActive && player.cards.length === 0) {
           player.isActive = false;
         }
       }
-      
       const stillActive = this.players.filter(p => p.isActive);
-      
       if (stillActive.length === 1) {
         this.loser = stillActive[0].firstName;
         this.status = 'finished';
-        
-        // Победители — все кроме проигравшего
         const winners = this.players.filter(p => p.firstName !== this.loser).map(p => p.firstName);
         this.winner = winners.join(', ');
       } else if (stillActive.length === 0) {
@@ -382,46 +310,28 @@ class Room {
   }
 }
 
-// ===== SOCKET.IO ОБРАБОТЧИКИ =====
+// ===== SOCKET.IO =====
 io.on('connection', (socket) => {
-  console.log('Клиент подключился:', socket.id);
   let currentRoom = null;
   let playerIndex = -1;
 
-  // Создание комнаты
   socket.on('create-room', (data, callback) => {
     const roomId = uuidv4().slice(0, 8).toUpperCase();
     const room = new Room(roomId, data.roomName || `Комната ${roomId}`);
     rooms.set(roomId, room);
-    
     callback({ success: true, roomId, roomName: room.name });
   });
 
-  // Присоединение к комнате
   socket.on('join-room', (data, callback) => {
     const room = rooms.get(data.roomId);
-    if (!room) {
-      callback({ success: false, error: 'Комната не найдена' });
-      return;
-    }
-    
-    if (room.players.length >= room.maxPlayers) {
-      callback({ success: false, error: 'Комната заполнена' });
-      return;
-    }
-    
-    if (room.status !== 'waiting') {
-      callback({ success: false, error: 'Игра уже идёт' });
-      return;
-    }
-    
+    if (!room) { callback({ success: false, error: 'Комната не найдена' }); return; }
+    if (room.players.length >= room.maxPlayers) { callback({ success: false, error: 'Комната заполнена' }); return; }
+    if (room.status !== 'waiting') { callback({ success: false, error: 'Игра уже идёт' }); return; }
     const userData = data.userData || {};
     if (room.addPlayer(socket.id, userData)) {
       currentRoom = room;
       playerIndex = room.players.length - 1;
       socket.join(room.id);
-      
-      // Уведомляем всех в комнате
       io.to(room.id).emit('player-joined', {
         players: room.players.map(p => ({
           firstName: p.firstName,
@@ -431,23 +341,17 @@ io.on('connection', (socket) => {
         })),
         roomName: room.name
       });
-      
       callback({ success: true, playerIndex });
     } else {
       callback({ success: false, error: 'Не удалось войти в комнату' });
     }
   });
 
-  // Игрок готов
   socket.on('player-ready', () => {
     if (!currentRoom || playerIndex === -1) return;
-    
     currentRoom.players[playerIndex].isReady = true;
-    
-    // Проверяем, все ли готовы
     const allReady = currentRoom.players.every(p => p.isReady);
     const enoughPlayers = currentRoom.players.length >= 2;
-    
     io.to(currentRoom.id).emit('player-ready-update', {
       players: currentRoom.players.map(p => ({
         firstName: p.firstName,
@@ -459,12 +363,9 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Старт игры (только создатель или когда все готовы)
   socket.on('start-game', () => {
-    if (!currentRoom || playerIndex !== 0) return; // Только создатель
-    
+    if (!currentRoom || playerIndex !== 0) return;
     if (currentRoom.startGame()) {
-      // Отправляем состояние каждому игроку
       for (let i = 0; i < currentRoom.players.length; i++) {
         const state = currentRoom.getGameState(i);
         io.to(currentRoom.players[i].socketId).emit('game-started', state);
@@ -472,18 +373,14 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Ход игрока
   socket.on('make-move', (data, callback) => {
     if (!currentRoom || playerIndex === -1 || currentRoom.status !== 'playing') {
       callback({ success: false, error: 'Игра не активна' });
       return;
     }
-    
     const result = currentRoom.makeMove(playerIndex, data.cardId);
     callback(result);
-    
     if (result.success) {
-      // Обновляем состояние всех игроков
       for (let i = 0; i < currentRoom.players.length; i++) {
         const state = currentRoom.getGameState(i);
         io.to(currentRoom.players[i].socketId).emit('game-update', state);
@@ -491,16 +388,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Взять карты (сдаться)
   socket.on('take-cards', (data, callback) => {
-    if (!currentRoom || playerIndex === -1) {
-      callback({ success: false, error: 'Ошибка' });
-      return;
-    }
-    
+    if (!currentRoom || playerIndex === -1) { callback({ success: false, error: 'Ошибка' }); return; }
     const result = currentRoom.takeCards(playerIndex);
     callback(result);
-    
     if (result.success) {
       for (let i = 0; i < currentRoom.players.length; i++) {
         const state = currentRoom.getGameState(i);
@@ -509,14 +400,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Завершить ход (если все отбиты)
   socket.on('end-turn', () => {
     if (!currentRoom || playerIndex !== currentRoom.attackerIndex) return;
-    
     const allBeaten = currentRoom.table.every(p => p.beatenBy !== null);
     if (allBeaten && currentRoom.table.length > 0) {
       currentRoom.endTurn(true);
-      
       for (let i = 0; i < currentRoom.players.length; i++) {
         const state = currentRoom.getGameState(i);
         io.to(currentRoom.players[i].socketId).emit('game-update', state);
@@ -524,9 +412,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Отключение
   socket.on('disconnect', () => {
-    console.log('Клиент отключился:', socket.id);
     if (currentRoom) {
       currentRoom.removePlayer(socket.id);
       io.to(currentRoom.id).emit('player-left', {
@@ -537,27 +423,41 @@ io.on('connection', (socket) => {
           isActive: p.isActive
         }))
       });
-      
-      if (currentRoom.players.length === 0) {
-        rooms.delete(currentRoom.id);
-      }
+      if (currentRoom.players.length === 0) rooms.delete(currentRoom.id);
     }
   });
 });
 
-// API для получения списка комнат (для отладки)
+// ===== API: СПИСОК АКТИВНЫХ КОМНАТ =====
 app.get('/api/rooms', (req, res) => {
-  const roomList = Array.from(rooms.values()).map(r => ({
-    id: r.id,
-    name: r.name,
-    players: r.players.length,
-    maxPlayers: r.maxPlayers,
-    status: r.status
-  }));
+  const roomList = Array.from(rooms.values())
+    .filter(r => r.status === 'waiting')
+    .map(r => ({
+      id: r.id,
+      name: r.name,
+      players: r.players.length,
+      maxPlayers: r.maxPlayers,
+      status: r.status,
+      playerNames: r.players.map(p => p.firstName)
+    }));
   res.json(roomList);
+});
+
+// API: Инфо о конкретной комнате
+app.get('/api/rooms/:roomId', (req, res) => {
+  const room = rooms.get(req.params.roomId.toUpperCase());
+  if (!room) return res.status(404).json({ error: 'Комната не найдена' });
+  res.json({
+    id: room.id,
+    name: room.name,
+    players: room.players.length,
+    maxPlayers: room.maxPlayers,
+    status: room.status,
+    playerNames: room.players.map(p => p.firstName)
+  });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`🚀 Сервер запущен на порту ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
