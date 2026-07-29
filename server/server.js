@@ -13,7 +13,7 @@ const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// ===== КЛАСС КАРТЫ =====
+// ========= КАРТЫ =========
 class Card {
   constructor(suit, rank) {
     this.suit = suit;
@@ -46,8 +46,9 @@ function shuffleDeck(deck) {
   return deck;
 }
 
-// ===== КОМНАТЫ =====
+// ========= КОМНАТЫ =========
 const rooms = new Map();
+const roomDeletionTimers = new Map(); // Таймеры удаления комнат
 
 class Room {
   constructor(id, name) {
@@ -203,7 +204,7 @@ class Room {
     if (playerIndex === this.attackerIndex ||
         (playerIndex !== this.defenderIndex && this.canThrow(card, playerIndex))) {
       if (this.table.length >= this.getMaxCardsOnTable()) {
-        return { success: false, error: 'Нельзя подкинуть больше карт' };
+        return { success: false, error: 'Нельзя больше карт на столе' };
       }
       player.cards.splice(cardIdx, 1);
       this.table.push({ attacker: playerIndex, card: card, beatenBy: null });
@@ -217,7 +218,7 @@ class Room {
         return { success: false, error: 'Эта карта уже отбита' };
       }
       if (!this.canBeat(lastPair.card, card)) {
-        return { success: false, error: 'Нельзя отбить этой картой' };
+        return { success: false, error: 'Нельзя этой картой отбить' };
       }
       player.cards.splice(cardIdx, 1);
       lastPair.beatenBy = card;
@@ -310,23 +311,46 @@ class Room {
   }
 }
 
-// ===== SOCKET.IO =====
+// ========= SOCKET.IO =========
 io.on('connection', (socket) => {
   let currentRoom = null;
   let playerIndex = -1;
 
   socket.on('create-room', (data, callback) => {
     const roomId = uuidv4().slice(0, 8).toUpperCase();
-    const room = new Room(roomId, data.roomName || `Комната ${roomId}`);
+    const room = new Room(roomId, data.roomName || `Игра ${roomId}`);
     rooms.set(roomId, room);
+    // Отменяем таймер удаления, если был
+    if (roomDeletionTimers.has(roomId)) {
+      clearTimeout(roomDeletionTimers.get(roomId));
+      roomDeletionTimers.delete(roomId);
+    }
     callback({ success: true, roomId, roomName: room.name });
   });
 
   socket.on('join-room', (data, callback) => {
+    console.log('join-room:', data.roomId, 'socket:', socket.id);
     const room = rooms.get(data.roomId);
-    if (!room) { callback({ success: false, error: 'Комната не найдена' }); return; }
-    if (room.players.length >= room.maxPlayers) { callback({ success: false, error: 'Комната заполнена' }); return; }
-    if (room.status !== 'waiting') { callback({ success: false, error: 'Игра уже идёт' }); return; }
+    if (!room) { 
+      console.log('Комната не найдена:', data.roomId);
+      callback({ success: false, error: 'Комната не найдена' }); 
+      return; 
+    }
+    if (room.players.length >= room.maxPlayers) { 
+      callback({ success: false, error: 'Комната полна' }); 
+      return; 
+    }
+    if (room.status !== 'waiting') { 
+      callback({ success: false, error: 'Игра уже началась' }); 
+      return; 
+    }
+    
+    // Отменяем таймер удаления
+    if (roomDeletionTimers.has(data.roomId)) {
+      clearTimeout(roomDeletionTimers.get(data.roomId));
+      roomDeletionTimers.delete(data.roomId);
+    }
+    
     const userData = data.userData || {};
     if (room.addPlayer(socket.id, userData)) {
       currentRoom = room;
@@ -348,7 +372,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('player-ready', () => {
-    if (!currentRoom || playerIndex === -1) return;
+    console.log('player-ready от', socket.id, 'index:', playerIndex, 'room:', currentRoom?.id);
+    if (!currentRoom || playerIndex === -1) {
+      console.log('player-ready отклонён: нет комнаты или индекса');
+      return;
+    }
     currentRoom.players[playerIndex].isReady = true;
     const allReady = currentRoom.players.every(p => p.isReady);
     const enoughPlayers = currentRoom.players.length >= 2;
@@ -375,7 +403,7 @@ io.on('connection', (socket) => {
 
   socket.on('make-move', (data, callback) => {
     if (!currentRoom || playerIndex === -1 || currentRoom.status !== 'playing') {
-      callback({ success: false, error: 'Игра не активна' });
+      callback({ success: false, error: 'Игра не идёт' });
       return;
     }
     const result = currentRoom.makeMove(playerIndex, data.cardId);
@@ -389,7 +417,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('take-cards', (data, callback) => {
-    if (!currentRoom || playerIndex === -1) { callback({ success: false, error: 'Ошибка' }); return; }
+    if (!currentRoom || playerIndex === -1) { 
+      callback({ success: false, error: 'Ошибка' }); 
+      return; 
+    }
     const result = currentRoom.takeCards(playerIndex);
     callback(result);
     if (result.success) {
@@ -412,26 +443,35 @@ io.on('connection', (socket) => {
     }
   });
 
- socket.on('disconnect', () => {
-  if (currentRoom) {
-    currentRoom.removePlayer(socket.id);
-    io.to(currentRoom.id).emit('player-left', {
-      players: currentRoom.players.map(p => ({
-        firstName: p.firstName,
-        photoUrl: p.photoUrl,
-        isReady: p.isReady,
-        isActive: p.isActive
-      }))
-    });
-    setTimeout(() => {
-      if (currentRoom && currentRoom.players.length === 0) {
-        rooms.delete(currentRoom.id);
-      }
-    }, 15000);
-  }
+  socket.on('disconnect', () => {
+    console.log('disconnect:', socket.id, 'room:', currentRoom?.id);
+    if (currentRoom) {
+      currentRoom.removePlayer(socket.id);
+      io.to(currentRoom.id).emit('player-left', {
+        players: currentRoom.players.map(p => ({
+          firstName: p.firstName,
+          photoUrl: p.photoUrl,
+          isReady: p.isReady,
+          isActive: p.isActive
+        }))
+      });
+      
+      // Задержка перед удалением — на случай перезагрузки страницы
+      const roomIdToDelete = currentRoom.id;
+      const timer = setTimeout(() => {
+        const room = rooms.get(roomIdToDelete);
+        if (room && room.players.length === 0) {
+          rooms.delete(roomIdToDelete);
+          console.log('Комната удалена:', roomIdToDelete);
+        }
+        roomDeletionTimers.delete(roomIdToDelete);
+      }, 15000);
+      roomDeletionTimers.set(roomIdToDelete, timer);
+    }
+  });
 });
 
-// ===== API: СПИСОК АКТИВНЫХ КОМНАТ =====
+// ========= API =========
 app.get('/api/rooms', (req, res) => {
   const roomList = Array.from(rooms.values())
     .filter(r => r.status === 'waiting')
@@ -446,7 +486,7 @@ app.get('/api/rooms', (req, res) => {
   res.json(roomList);
 });
 
-// API: Инфо о конкретной комнате
+// API: инфо о конкретной комнате
 app.get('/api/rooms/:roomId', (req, res) => {
   const room = rooms.get(req.params.roomId.toUpperCase());
   if (!room) return res.status(404).json({ error: 'Комната не найдена' });
